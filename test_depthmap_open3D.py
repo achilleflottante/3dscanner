@@ -14,7 +14,6 @@ def load_depth_image(image_path):
     image = Image.open(image_path)
     depth_image = np.array(image)
     depth_image = - depth_image[:, :, 0]
-    depth_image[0,0] += 1000
     return depth_image
 
 def depth_to_point_cloud(depth_image, fx, fy, cx, cy):
@@ -32,7 +31,7 @@ def depth_to_point_cloud(depth_image, fx, fy, cx, cy):
     height, width = depth_image.shape
     print(height, width)
     x, y = np.meshgrid(np.arange(width), np.arange(height))
-    z = depth_image / 1000.0  # suppose que l'unité de profondeur est en millimètres et on la mets en mètres
+    z = depth_image / 1000 # suppose que l'unité de profondeur est en millimètres et on la mets en mètres
 
     x = (x - cx) * z / fx
     y = (y - cy) * z / fy
@@ -45,10 +44,13 @@ def depth_to_point_cloud(depth_image, fx, fy, cx, cy):
 
 
 def main():
-    image_path = r"Stereo reconstruction\TEST notion\media\depthmap1.png"
+    image_path = r"depthmap4.png"
     fx = 525.0  # distance focale en x
     fy = 525.0  # distance focale en y
+    fx = 160
+    fy = 160
     cx = 300 # point principal x
+    
     cy = 400  # point principal y
 
     depth_image = load_depth_image(image_path)
