@@ -1,0 +1,101 @@
+import open3d as o3d
+import numpy as np
+import copy
+
+def preprocess_point_cloud(pcd, voxel_size):
+    print(":: Downsample with a voxel size %.3f." % voxel_size)
+    pcd_down = pcd.voxel_down_sample(voxel_size)
+
+    radius_normal = voxel_size * 2
+    print(":: Estimate normal with search radius %.3f." % radius_normal)
+    pcd_down.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+
+    radius_feature = voxel_size * 5
+    print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
+    pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        pcd_down,
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
+    return pcd_down, pcd_fpfh
+
+def execute_global_registration(source_down, target_down, source_fpfh,
+                                target_fpfh, voxel_size):
+    distance_threshold = voxel_size * 1.5
+    print(":: RANSAC registration on downsampled point clouds.")
+    print("   Since the downsampling voxel size is %.3f," % voxel_size)
+    print("   we use a liberal distance threshold %.3f." % distance_threshold)
+    result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh, True,
+        distance_threshold,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(True),
+        3, [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(
+                0.9),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(
+                distance_threshold)
+        ], o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999))
+    return result
+
+
+def refine_registration(source, target, source_fpfh, target_fpfh, voxel_size, rez):
+    distance_threshold = voxel_size * 0.4
+    print(":: Point-to-plane ICP registration is applied on original point")
+    print("   clouds to refine the alignment. This time we use a strict")
+    print("   distance threshold %.3f." % distance_threshold)
+    result = o3d.pipelines.registration.registration_icp(
+        source, target, distance_threshold, rez.transformation,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane())
+    return result
+
+
+def draw_registration_result(source, target, transformation):
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    source_temp.paint_uniform_color([1, 0.706, 0])
+    target_temp.paint_uniform_color([0, 0.651, 0.929])
+    source_temp.transform(transformation)
+    o3d.visualization.draw_geometries([source_temp, target_temp],
+                                      zoom=0.4559,
+                                      front=[0.6452, -0.3036, -0.7011],
+                                      lookat=[1.9892, 2.0208, 1.8945],
+                                      up=[-0.2779, -0.9482, 0.1556])
+
+
+
+cameramatrice = np.array([[3.44484369e+03, 0.00000000e+00, 2.05789265e+03],
+ [0.00000000e+00, 3.18929861e+03, 1.18328600e+03],
+ [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+
+color_raw1 = o3d.io.read_image(r"D:\\Ecole\\Cours\\info\\scanner\data\\3.jpg")
+depth_raw1 = o3d.io.read_image(r"D:\Ecole\Cours\info\scanner\lighter3.png")
+rgbd_image1 = o3d.geometry.RGBDImage.create_from_color_and_depth(
+    color_raw1, depth_raw1)
+print("1 ready")
+
+color_raw2 = o3d.io.read_image(r"D:\\Ecole\\Cours\\info\\scanner\data\\2.jpg")
+depth_raw2 = o3d.io.read_image(r"D:\Ecole\Cours\info\scanner\lighter2.png")
+rgbd_image2 = o3d.geometry.RGBDImage.create_from_color_and_depth(
+    color_raw2, depth_raw2)
+print("2 ready")
+
+pcd1 = o3d.geometry.PointCloud.create_from_rgbd_image(
+    rgbd_image1,
+    o3d.camera.PinholeCameraIntrinsic(
+        2296, 4080, 3.18929861e+03, 3.44484369e+03,  2296/2, 4080/2))
+pcd2 = o3d.geometry.PointCloud.create_from_rgbd_image(
+    rgbd_image2,
+    o3d.camera.PinholeCameraIntrinsic(
+        2296, 4080, 3.18929861e+03, 3.44484369e+03,  2296/2, 4080/2))
+
+print("extraction done")
+
+voxel_size = 0.00001
+source_down, source_fpfh = preprocess_point_cloud(pcd1, voxel_size)
+target_down, target_fpfh = preprocess_point_cloud(pcd2, voxel_size)
+
+result = execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+print("aaa")
+#result = refine_registration(pcd1, pcd2, source_fpfh, target_fpfh, voxel_size, result)
+draw_registration_result(pcd1, pcd2, result.transformation)
+print(result.transformation)
+o3d.visualization.draw_geometries([pcd1, pcd2.transform(result.transformation)])
